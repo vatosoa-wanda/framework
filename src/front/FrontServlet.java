@@ -3,12 +3,16 @@ package front;
 
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.lang.reflect.Method;
+import java.util.Map;
 
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+
+import url.ScannerFramework;
 
 /**
  * This is the servlet that takes all incoming requests targeting the app - If
@@ -19,9 +23,34 @@ public class FrontServlet extends HttpServlet {
 
     RequestDispatcher defaultDispatcher;
 
+    // Ajout : stockage des mappings détectés
+    private Map<String, Method> urlMappings;
+    private Map<String, Object> controllers;
+
     @Override
     public void init() {
         defaultDispatcher = getServletContext().getNamedDispatcher("default");
+
+        try {
+            // Initialisation du framework
+            System.out.println("=== Initialisation du Framework ===");
+
+            // Récupération du chemin vers /WEB-INF/classes
+            String classesPath = getServletContext().getRealPath("/WEB-INF/classes");
+
+            // Appel du scanner
+            ScannerFramework scanner = new ScannerFramework();
+            scanner.scan(classesPath);
+
+            // Récupération des mappings trouvés
+            urlMappings = scanner.getUrlMappings();
+            controllers = scanner.getControllers();
+
+            System.out.println("=== Initialisation terminée ===");
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException("Erreur lors de l'initialisation du Framework", e);
+        }
     }
 
     @Override
@@ -64,5 +93,4 @@ public class FrontServlet extends HttpServlet {
     private void defaultServe(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
         defaultDispatcher.forward(req, res);
     }
-
 }
