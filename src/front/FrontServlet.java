@@ -1,4 +1,3 @@
-// package com.giga.spring.servlet;
 package front;
 
 import java.io.IOException;
@@ -14,16 +13,9 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import url.ScannerFramework;
 
-/**
- * This is the servlet that takes all incoming requests targeting the app - If
- * the requested resource exists, it delegates to the default dispatcher - else
- * it shows the requested URL
- */
 public class FrontServlet extends HttpServlet {
 
     RequestDispatcher defaultDispatcher;
-
-    // Ajout : stockage des mappings détectés
     private Map<String, Method> urlMappings;
     private Map<String, Object> controllers;
 
@@ -32,20 +24,15 @@ public class FrontServlet extends HttpServlet {
         defaultDispatcher = getServletContext().getNamedDispatcher("default");
 
         try {
-            // Initialisation du framework
             System.out.println("=== Initialisation du Framework ===");
-
-            // Récupération du chemin vers /WEB-INF/classes
             String classesPath = getServletContext().getRealPath("/WEB-INF/classes");
-
-            // Appel du scanner
+            
             ScannerFramework scanner = new ScannerFramework();
             scanner.scan(classesPath);
-
-            // Récupération des mappings trouvés
+            
             urlMappings = scanner.getUrlMappings();
             controllers = scanner.getControllers();
-
+            
             System.out.println("=== Initialisation terminée ===");
         } catch (Exception e) {
             e.printStackTrace();
@@ -55,12 +42,6 @@ public class FrontServlet extends HttpServlet {
 
     @Override
     protected void service(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
-        /**
-         * Example: 
-         * If URI is /app/folder/file.html 
-         * and context path is /app,
-         * then path = /folder/file.html
-         */
         String path = req.getRequestURI().substring(req.getContextPath().length());
         
         boolean resourceExists = getServletContext().getResource(path) != null;
@@ -72,22 +53,85 @@ public class FrontServlet extends HttpServlet {
         }
     }
 
-    private void customServe(HttpServletRequest req, HttpServletResponse res) throws IOException {
-        try (PrintWriter out = res.getWriter()) {
-            String uri = req.getRequestURI();
-            String responseBody = """
-                <html>
-                    <head><title>Resource Not Found</title></head>
-                    <body>
-                        <h1>Unknown resource</h1>
-                        <p>The requested URL was not found: <strong>%s</strong></p>
-                    </body>
-                </html>
-                """.formatted(uri);
-
-            res.setContentType("text/html;charset=UTF-8");
-            out.println(responseBody);
+    private void customServe(HttpServletRequest req, HttpServletResponse res) throws IOException, ServletException {
+        String path = req.getRequestURI().substring(req.getContextPath().length());
+        
+        try {
+            if (urlMappings != null && urlMappings.containsKey(path)) {
+                Method method = urlMappings.get(path);
+                Object controllerInstance = findControllerInstance(method.getDeclaringClass());
+                
+                if (controllerInstance != null) {
+                    Object result = method.invoke(controllerInstance);
+                    handleResult(result, path, req, res);
+                } else {
+                    sendError(res, "Contrôleur non trouvé pour: " + path);
+                }
+            } else {
+                sendNotFound(res, path);
+            }
+        } catch (Exception e) {
+            sendError(res, "Erreur: " + e.getMessage());
+            e.printStackTrace();
         }
+    }
+
+    private Object findControllerInstance(Class<?> controllerClass) {
+        for (Object controller : controllers.values()) {
+            if (controller.getClass().equals(controllerClass)) {
+                return controller;
+            }
+        }
+        return null;
+    }
+
+    private void handleResult(Object result, String path, HttpServletRequest req, HttpServletResponse res) 
+            throws IOException, ServletException {
+        
+        if (result == null) {
+            res.setContentType("text/plain; charset=UTF-8");
+            res.getWriter().println("Méthode exécutée: " + path);
+            return;
+        }
+
+        if (result instanceof String) {
+            res.setContentType("text/plain; charset=UTF-8");
+            res.getWriter().println("Résultat: " + result);
+            return;
+        }
+
+        if (result instanceof view.ModelView) {
+            view.ModelView mv = (view.ModelView) result;
+            String viewPath = mv.getView();
+            if (viewPath == null || viewPath.isEmpty()) {
+                res.setContentType("text/plain; charset=UTF-8");
+                res.getWriter().println("Erreur: Aucune vue spécifiée dans ModelView");
+                return;
+            }
+            RequestDispatcher dispatcher = getServletContext().getRequestDispatcher("/" + viewPath);
+            if (dispatcher != null) {
+                dispatcher.forward(req, res);
+            } else {
+                res.setContentType("text/plain; charset=UTF-8");
+                res.getWriter().println("Erreur: Vue non trouvée - " + viewPath);
+            }
+            return;
+        }
+
+        res.setContentType("text/plain; charset=UTF-8");
+        res.getWriter().println("Résultat (" + result.getClass().getSimpleName() + "): " + result);
+    }
+
+    private void sendNotFound(HttpServletResponse res, String path) throws IOException {
+        res.setContentType("text/html; charset=UTF-8");
+        res.setStatus(HttpServletResponse.SC_NOT_FOUND);
+        res.getWriter().println("<h1>URL non supportée: " + path + "</h1>");
+    }
+
+    private void sendError(HttpServletResponse res, String message) throws IOException {
+        res.setContentType("text/plain; charset=UTF-8");
+        res.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+        res.getWriter().println(message);
     }
 
     private void defaultServe(HttpServletRequest req, HttpServletResponse res) throws ServletException, IOException {
