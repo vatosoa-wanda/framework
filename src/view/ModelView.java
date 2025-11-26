@@ -16,21 +16,11 @@ public class ModelView {
         this.model = new HashMap<>();
     }
 
-    public String getView() {
-        return view;
-    }
+    public String getView() { return view; }
+    public void setView(String view) { this.view = view; }
 
-    public void setView(String view) {
-        this.view = view;
-    }
-
-    public Map<String, Object> getModel() {
-        return model;
-    }
-
-    public void setModel(Map<String, Object> model) {
-        this.model = model;
-    }
+    public Map<String, Object> getModel() { return model; }
+    public void setModel(Map<String, Object> model) { this.model = model; }
 
     public void addObject(String key, Object value) {
         this.model.put(key, value);

@@ -108,6 +108,12 @@ public class FrontServlet extends HttpServlet {
                 res.getWriter().println("Erreur: Aucune vue spécifiée dans ModelView");
                 return;
             }
+
+            // Transférer les données du modèle vers la requête
+            for (Map.Entry<String, Object> entry : mv.getModel().entrySet()) {
+                req.setAttribute(entry.getKey(), entry.getValue());
+            }
+
             RequestDispatcher dispatcher = getServletContext().getRequestDispatcher("/" + viewPath);
             if (dispatcher != null) {
                 dispatcher.forward(req, res);
