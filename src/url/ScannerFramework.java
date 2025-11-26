@@ -2,15 +2,20 @@ package url;
 
 import java.io.File;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.util.HashMap;
 import java.util.Map;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import sprint2bis.Controller;
-// import url.UrlMapping;
+import annotation.UrlGet;
+import annotation.UrlPost;
+import framework.annotation.Param;
 
 public class ScannerFramework {
 
-    private Map<String, Method> urlMappings = new HashMap<>();
+    private Map<String, Map<String, Method>> urlMappings = new HashMap<>();
     private Map<String, Object> controllers = new HashMap<>();
 
     // Lance le scan à partir du chemin du répertoire /WEB-INF/classes
@@ -51,7 +56,7 @@ public class ScannerFramework {
                 for (Method method : clazz.getDeclaredMethods()) {
                     if (method.isAnnotationPresent(UrlMapping.class)) {
                         UrlMapping mapping = method.getAnnotation(UrlMapping.class);
-                        urlMappings.put(mapping.value(), method);
+                        urlMappings.computeIfAbsent(mapping.value(), k -> new HashMap<>()).put(mapping.method(), method);
 
                         // Affichage lisible
                         String pkg = clazz.getPackage().getName();
@@ -60,6 +65,26 @@ public class ScannerFramework {
                                 pkg + "." + clazz.getSimpleName(),
                                 method.getName(),
                                 mapping.method());
+                    } else if (method.isAnnotationPresent(UrlGet.class)) {
+                        UrlGet mapping = method.getAnnotation(UrlGet.class);
+                        urlMappings.computeIfAbsent(mapping.value(), k -> new HashMap<>()).put("GET", method);
+
+                        // Affichage lisible
+                        String pkg = clazz.getPackage().getName();
+                        System.out.printf("[Mapping] %-20s → %s.%s()  (HTTP GET)%n",
+                                mapping.value(),
+                                pkg + "." + clazz.getSimpleName(),
+                                method.getName());
+                    } else if (method.isAnnotationPresent(UrlPost.class)) {
+                        UrlPost mapping = method.getAnnotation(UrlPost.class);
+                        urlMappings.computeIfAbsent(mapping.value(), k -> new HashMap<>()).put("POST", method);
+
+                        // Affichage lisible
+                        String pkg = clazz.getPackage().getName();
+                        System.out.printf("[Mapping] %-20s → %s.%s()  (HTTP POST)%n",
+                                mapping.value(),
+                                pkg + "." + clazz.getSimpleName(),
+                                method.getName());
                     }
                 }
             }
@@ -71,7 +96,91 @@ public class ScannerFramework {
         }
     }
 
-    public Map<String, Method> getUrlMappings() {
+    // 🔹 MAPPING DES PARAMÈTRES DE FORMULAIRE
+    // ------------------------------
+    public static Object[] mapFormParametersToMethodArgs(Method method, HttpServletRequest request) {
+        return mapFormParametersToMethodArgs(method, request, null, null);
+    }
+
+    public static Object[] mapFormParametersToMethodArgs(Method method, HttpServletRequest request,
+                                                     String urlPattern, String actualPath) {
+        Parameter[] parameters = method.getParameters();
+        Object[] args = new Object[parameters.length];
+
+        Map<String, String> pathVars = (urlPattern != null && actualPath != null) 
+            ? extractPathVariables(urlPattern, actualPath) 
+            : new HashMap<>();
+
+        for (int i = 0; i < parameters.length; i++) {
+            Parameter p = parameters[i];
+            String value = null;
+
+            // 1 Si annotation @Param
+            if (p.isAnnotationPresent(Param.class)) {
+                String name = p.getAnnotation(Param.class).value();
+                value = request.getParameter(name);
+                System.out.printf("[Param] Annotation @Param('%s') → valeur: %s%n", name, value);
+            }
+
+            // 2 Sinon on essaie par nom de paramètre
+            if ((value == null || value.isEmpty()) && p.isNamePresent()) {
+                value = request.getParameter(p.getName());
+                System.out.printf("[Param] Nom paramètre '%s' → valeur: %s%n", p.getName(), value);
+            }
+
+            // 3 Sinon on regarde dans les path variables
+            if ((value == null || value.isEmpty()) && pathVars.containsKey(p.getName())) {
+                value = pathVars.get(p.getName());
+                System.out.printf("[Param] Path variable '%s' → valeur: %s%n", p.getName(), value);
+            }
+
+            // 4 Conversion automatique
+            args[i] = convertValue(value, p.getType());
+            System.out.printf("[Param] Conversion %s → %s (%s)%n", value, args[i], p.getType().getSimpleName());
+        }
+        return args;
+    }
+
+    private static Map<String, String> extractPathVariables(String pattern, String actualPath) {
+        Map<String, String> vars = new HashMap<>();
+        String[] pat = pattern.split("/");
+        String[] act = actualPath.split("/");
+        if (pat.length != act.length) return vars;
+
+        for (int i = 0; i < pat.length; i++) {
+            if (pat[i].startsWith("{") && pat[i].endsWith("}")) {
+                String name = pat[i].substring(1, pat[i].length() - 1);
+                vars.put(name, act[i]);
+            }
+        }
+        return vars;
+    }
+
+    private static Object convertValue(String value, Class<?> type) {
+        if (value == null) {
+            // Retourne la valeur par défaut pour les types primitifs
+            if (type == int.class) return 0;
+            if (type == long.class) return 0L;
+            if (type == double.class) return 0.0;
+            if (type == float.class) return 0.0f;
+            if (type == boolean.class) return false;
+            return null;
+        }
+        
+        try {
+            if (type == String.class) return value;
+            if (type == int.class || type == Integer.class) return Integer.parseInt(value);
+            if (type == long.class || type == Long.class) return Long.parseLong(value);
+            if (type == double.class || type == Double.class) return Double.parseDouble(value);
+            if (type == float.class || type == Float.class) return Float.parseFloat(value);
+            if (type == boolean.class || type == Boolean.class) return Boolean.parseBoolean(value);
+        } catch (Exception e) {
+            System.err.println("Erreur conversion: " + value + " vers " + type.getSimpleName());
+        }
+        return null;
+    }
+
+    public Map<String, Map<String, Method>> getUrlMappings() {
         return urlMappings;
     }
 

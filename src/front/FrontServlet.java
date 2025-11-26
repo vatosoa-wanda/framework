@@ -16,7 +16,7 @@ import url.ScannerFramework;
 public class FrontServlet extends HttpServlet {
 
     RequestDispatcher defaultDispatcher;
-    private Map<String, Method> urlMappings;
+    private Map<String, Map<String, Method>> urlMappings;
     private Map<String, Object> controllers;
 
     @Override
@@ -55,17 +55,25 @@ public class FrontServlet extends HttpServlet {
 
     private void customServe(HttpServletRequest req, HttpServletResponse res) throws IOException, ServletException {
         String path = req.getRequestURI().substring(req.getContextPath().length());
-        
+        String method = req.getMethod();
+
         try {
             if (urlMappings != null && urlMappings.containsKey(path)) {
-                Method method = urlMappings.get(path);
-                Object controllerInstance = findControllerInstance(method.getDeclaringClass());
-                
-                if (controllerInstance != null) {
-                    Object result = method.invoke(controllerInstance);
-                    handleResult(result, path, req, res);
+                Map<String, Method> methodMap = urlMappings.get(path);
+                if (methodMap != null && methodMap.containsKey(method)) {
+                    Method handlerMethod = methodMap.get(method);
+                    Object controllerInstance = findControllerInstance(handlerMethod.getDeclaringClass());
+
+                    if (controllerInstance != null) {
+                        // UTILISATION DE LA NOUVELLE MÉTHODE
+                        Object[] methodArgs = ScannerFramework.mapFormParametersToMethodArgs(handlerMethod, req);
+                        Object result = handlerMethod.invoke(controllerInstance, methodArgs);
+                        handleResult(result, path, req, res);
+                    } else {
+                        sendError(res, "Contrôleur non trouvé pour: " + path);
+                    }
                 } else {
-                    sendError(res, "Contrôleur non trouvé pour: " + path);
+                    sendNotFound(res, path);
                 }
             } else {
                 sendNotFound(res, path);
