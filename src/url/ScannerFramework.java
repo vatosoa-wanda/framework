@@ -12,6 +12,8 @@ import sprint2bis.Controller;
 import annotation.UrlGet;
 import annotation.UrlPost;
 import framework.annotation.Param;
+import url.UrlMapping;
+import url.UrlPatternMatcher;
 
 public class ScannerFramework {
 
@@ -85,6 +87,16 @@ public class ScannerFramework {
                                 mapping.value(),
                                 pkg + "." + clazz.getSimpleName(),
                                 method.getName());
+                    } else if (method.isAnnotationPresent(UrlMapping.class)) {
+                        UrlMapping mapping = method.getAnnotation(UrlMapping.class);
+                        urlMappings.computeIfAbsent(mapping.value(), k -> new HashMap<>()).put("GET", method);
+
+                        // Affichage lisible
+                        String pkg = clazz.getPackage().getName();
+                        System.out.printf("[Mapping] %-20s → %s.%s()  (HTTP GET)%n",
+                                mapping.value(),
+                                pkg + "." + clazz.getSimpleName(),
+                                method.getName());
                     }
                 }
             }
@@ -107,8 +119,8 @@ public class ScannerFramework {
         Parameter[] parameters = method.getParameters();
         Object[] args = new Object[parameters.length];
 
-        Map<String, String> pathVars = (urlPattern != null && actualPath != null) 
-            ? extractPathVariables(urlPattern, actualPath) 
+        Map<String, String> pathVars = (urlPattern != null && actualPath != null)
+            ? UrlPatternMatcher.extractVariables(urlPattern, actualPath)
             : new HashMap<>();
 
         for (int i = 0; i < parameters.length; i++) {
@@ -141,20 +153,7 @@ public class ScannerFramework {
         return args;
     }
 
-    private static Map<String, String> extractPathVariables(String pattern, String actualPath) {
-        Map<String, String> vars = new HashMap<>();
-        String[] pat = pattern.split("/");
-        String[] act = actualPath.split("/");
-        if (pat.length != act.length) return vars;
 
-        for (int i = 0; i < pat.length; i++) {
-            if (pat[i].startsWith("{") && pat[i].endsWith("}")) {
-                String name = pat[i].substring(1, pat[i].length() - 1);
-                vars.put(name, act[i]);
-            }
-        }
-        return vars;
-    }
 
     private static Object convertValue(String value, Class<?> type) {
         if (value == null) {
