@@ -12,6 +12,7 @@ import sprint2bis.Controller;
 import annotation.UrlGet;
 import annotation.UrlPost;
 import framework.annotation.Param;
+import url.UrlMapping;
 
 public class ScannerFramework {
 
@@ -82,6 +83,16 @@ public class ScannerFramework {
                         // Affichage lisible
                         String pkg = clazz.getPackage().getName();
                         System.out.printf("[Mapping] %-20s → %s.%s()  (HTTP POST)%n",
+                                mapping.value(),
+                                pkg + "." + clazz.getSimpleName(),
+                                method.getName());
+                    } else if (method.isAnnotationPresent(UrlMapping.class)) {
+                        UrlMapping mapping = method.getAnnotation(UrlMapping.class);
+                        urlMappings.computeIfAbsent(mapping.value(), k -> new HashMap<>()).put("GET", method);
+
+                        // Affichage lisible
+                        String pkg = clazz.getPackage().getName();
+                        System.out.printf("[Mapping] %-20s → %s.%s()  (HTTP GET)%n",
                                 mapping.value(),
                                 pkg + "." + clazz.getSimpleName(),
                                 method.getName());
