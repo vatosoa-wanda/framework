@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 import url.ScannerFramework;
+import url.UrlPatternMatcher;
 
 public class FrontServlet extends HttpServlet {
 
@@ -58,22 +59,30 @@ public class FrontServlet extends HttpServlet {
         String method = req.getMethod();
 
         try {
-            if (urlMappings != null && urlMappings.containsKey(path)) {
-                Map<String, Method> methodMap = urlMappings.get(path);
-                if (methodMap != null && methodMap.containsKey(method)) {
-                    Method handlerMethod = methodMap.get(method);
-                    Object controllerInstance = findControllerInstance(handlerMethod.getDeclaringClass());
+            String matchingPattern = null;
+            Map<String, Method> methodMap = null;
 
-                    if (controllerInstance != null) {
-                        // UTILISATION DE LA NOUVELLE MÉTHODE
-                        Object[] methodArgs = ScannerFramework.mapFormParametersToMethodArgs(handlerMethod, req);
-                        Object result = handlerMethod.invoke(controllerInstance, methodArgs);
-                        handleResult(result, path, req, res);
-                    } else {
-                        sendError(res, "Contrôleur non trouvé pour: " + path);
+            if (urlMappings != null) {
+                for (String pattern : urlMappings.keySet()) {
+                    if (UrlPatternMatcher.matches(pattern, path)) {
+                        matchingPattern = pattern;
+                        methodMap = urlMappings.get(pattern);
+                        break;
                     }
+                }
+            }
+
+            if (methodMap != null && methodMap.containsKey(method)) {
+                Method handlerMethod = methodMap.get(method);
+                Object controllerInstance = findControllerInstance(handlerMethod.getDeclaringClass());
+
+                if (controllerInstance != null) {
+                    // UTILISATION DE LA NOUVELLE MÉTHODE
+                    Object[] methodArgs = ScannerFramework.mapFormParametersToMethodArgs(handlerMethod, req, matchingPattern, path);
+                    Object result = handlerMethod.invoke(controllerInstance, methodArgs);
+                    handleResult(result, path, req, res);
                 } else {
-                    sendNotFound(res, path);
+                    sendError(res, "Contrôleur non trouvé pour: " + path);
                 }
             } else {
                 sendNotFound(res, path);
