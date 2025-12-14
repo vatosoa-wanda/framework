@@ -3,6 +3,7 @@ package url;
 import java.io.File;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -125,6 +126,24 @@ public class ScannerFramework {
 
         for (int i = 0; i < parameters.length; i++) {
             Parameter p = parameters[i];
+
+            // Check if parameter is Map<String, Object>
+            if (p.getType() == Map.class && p.getParameterizedType() instanceof ParameterizedType) {
+                ParameterizedType paramType = (ParameterizedType) p.getParameterizedType();
+                if (paramType.getActualTypeArguments().length == 2 &&
+                    paramType.getActualTypeArguments()[0] == String.class &&
+                    paramType.getActualTypeArguments()[1] == Object.class) {
+                    // Create Map<String, Object> from request parameters
+                    Map<String, Object> paramMap = new HashMap<>();
+                    for (Map.Entry<String, String[]> entry : request.getParameterMap().entrySet()) {
+                        paramMap.put(entry.getKey(), entry.getValue().length > 0 ? entry.getValue()[0] : null);
+                    }
+                    args[i] = paramMap;
+                    System.out.printf("[Param] Map<String, Object> populated with %d parameters%n", paramMap.size());
+                    continue;
+                }
+            }
+
             String value = null;
 
             // 1 Si annotation @Param
