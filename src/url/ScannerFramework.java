@@ -12,6 +12,7 @@ import java.util.Map;
 import jakarta.servlet.http.HttpServletRequest;
 
 import sprint2bis.Controller;
+import annotation.Json;
 import annotation.UrlGet;
 import annotation.UrlPost;
 import framework.annotation.Param;
@@ -87,6 +88,16 @@ public class ScannerFramework {
                         // Affichage lisible
                         String pkg = clazz.getPackage().getName();
                         System.out.printf("[Mapping] %-20s → %s.%s()  (HTTP POST)%n",
+                                mapping.value(),
+                                pkg + "." + clazz.getSimpleName(),
+                                method.getName());
+                    } else if (method.isAnnotationPresent(Json.class)) {
+                        Json mapping = method.getAnnotation(Json.class);
+                        urlMappings.computeIfAbsent(mapping.value(), k -> new HashMap<>()).put("GET", method);
+
+                        // Affichage lisible
+                        String pkg = clazz.getPackage().getName();
+                        System.out.printf("[Mapping] %-20s → %s.%s()  (JSON API)%n",
                                 mapping.value(),
                                 pkg + "." + clazz.getSimpleName(),
                                 method.getName());
