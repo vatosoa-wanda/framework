@@ -1,6 +1,8 @@
 package url;
 
 import java.io.File;
+import java.lang.reflect.Array;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
@@ -141,6 +143,53 @@ public class ScannerFramework {
                     args[i] = paramMap;
                     System.out.printf("[Param] Map<String, Object> populated with %d parameters%n", paramMap.size());
                     continue;
+                }
+            }
+
+            // Check if parameter is a custom object (not primitive, not String, not Map)
+            if (!p.getType().isPrimitive() && p.getType() != String.class && p.getType() != Map.class) {
+                try {
+                    Object obj = p.getType().getDeclaredConstructor().newInstance();
+                    for (Field field : p.getType().getDeclaredFields()) {
+                        field.setAccessible(true);
+                        String fieldName = field.getName();
+                        String paramValue = request.getParameter(fieldName);
+                        if (paramValue != null) {
+                            Object convertedValue = convertValue(paramValue, field.getType());
+                            field.set(obj, convertedValue);
+                        }
+                    }
+                    args[i] = obj;
+                    System.out.printf("[Param] Custom object %s instantiated and populated%n", p.getType().getSimpleName());
+                    continue;
+                } catch (Exception e) {
+                    System.err.println("Erreur lors de l'instanciation de l'objet personnalisé: " + p.getType().getSimpleName());
+                    e.printStackTrace();
+                }
+            }
+
+            // Check if parameter is an array of custom objects
+            if (p.getType().isArray() && !p.getType().getComponentType().isPrimitive() && p.getType().getComponentType() != String.class) {
+                try {
+                    // For simplicity, assume single object in array for now (can be extended)
+                    Object[] array = (Object[]) Array.newInstance(p.getType().getComponentType(), 1);
+                    Object obj = p.getType().getComponentType().getDeclaredConstructor().newInstance();
+                    for (Field field : p.getType().getComponentType().getDeclaredFields()) {
+                        field.setAccessible(true);
+                        String fieldName = field.getName();
+                        String paramValue = request.getParameter(fieldName);
+                        if (paramValue != null) {
+                            Object convertedValue = convertValue(paramValue, field.getType());
+                            field.set(obj, convertedValue);
+                        }
+                    }
+                    array[0] = obj;
+                    args[i] = array;
+                    System.out.printf("[Param] Array of custom objects %s[] instantiated and populated%n", p.getType().getComponentType().getSimpleName());
+                    continue;
+                } catch (Exception e) {
+                    System.err.println("Erreur lors de l'instanciation du tableau d'objets personnalisés: " + p.getType().getSimpleName());
+                    e.printStackTrace();
                 }
             }
 
