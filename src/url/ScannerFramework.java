@@ -92,13 +92,10 @@ public class ScannerFramework {
                                 pkg + "." + clazz.getSimpleName(),
                                 method.getName());
                     } else if (method.isAnnotationPresent(Json.class)) {
-                        Json mapping = method.getAnnotation(Json.class);
-                        urlMappings.computeIfAbsent(mapping.value(), k -> new HashMap<>()).put("GET", method);
-
-                        // Affichage lisible
+                        // @Json is a marker annotation (no path). Route is provided by @UrlGet/@UrlPost/@UrlMapping.
                         String pkg = clazz.getPackage().getName();
-                        System.out.printf("[Mapping] %-20s → %s.%s()  (JSON API)%n",
-                                mapping.value(),
+                        System.out.printf("[Mapping] %-20s → %s.%s()  (JSON API marker)%n",
+                                "(uses @UrlGet/@UrlPost/@UrlMapping)",
                                 pkg + "." + clazz.getSimpleName(),
                                 method.getName());
                     } else if (method.isAnnotationPresent(UrlMapping.class)) {

@@ -1,7 +1,7 @@
 @echo off
 
 REM Compile les servlets, crée le JAR et nettoie build
-set SERVLET_API_JAR=..\test-framework-2\lib
+set SERVLET_API_JAR=..\test-framework\lib
 set APP_NAME=Framework
 set SRC_DIR=src
 set BUILD_DIR=build
