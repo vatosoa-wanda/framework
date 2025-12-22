@@ -7,6 +7,7 @@ import java.util.Map;
 
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.MultipartConfig;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -14,7 +15,13 @@ import jakarta.servlet.http.HttpServletResponse;
 import annotation.Json;
 import url.ScannerFramework;
 import url.UrlPatternMatcher;
+import upload.MultipartParser;
 
+@MultipartConfig(
+    fileSizeThreshold = 1024 * 1024,      // 1 MB
+    maxFileSize = 1024 * 1024 * 10,       // 10 MB
+    maxRequestSize = 1024 * 1024 * 50     // 50 MB
+)
 public class FrontServlet extends HttpServlet {
 
     RequestDispatcher defaultDispatcher;
@@ -89,8 +96,16 @@ public class FrontServlet extends HttpServlet {
                 Object controllerInstance = findControllerInstance(handlerMethod.getDeclaringClass());
 
                 if (controllerInstance != null) {
-                    // UTILISATION DE LA NOUVELLE MÉTHODE
-                    Object[] methodArgs = ScannerFramework.mapFormParametersToMethodArgs(handlerMethod, req, matchingPattern, path);
+                    // NOUVEAU: Parser multipart si nécessaire
+                    MultipartParser multipartParser = null;
+                    if (MultipartParser.isMultipartRequest(req)) {
+                        multipartParser = new MultipartParser();
+                        multipartParser.parse(req);
+                    }
+                    
+                    // UTILISATION DE LA NOUVELLE MÉTHODE avec multipart
+                    Object[] methodArgs = ScannerFramework.mapFormParametersToMethodArgs(
+                        handlerMethod, req, matchingPattern, path, multipartParser);
                     Object result = handlerMethod.invoke(controllerInstance, methodArgs);
                     req.setAttribute("calledMethod", handlerMethod);
                     handleResult(result, path, req, res, handlerMethod);
