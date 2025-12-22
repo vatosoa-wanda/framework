@@ -7,6 +7,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,6 +19,8 @@ import annotation.UrlPost;
 import framework.annotation.Param;
 import url.UrlMapping;
 import url.UrlPatternMatcher;
+import upload.FileUpload;
+import upload.MultipartParser;
 
 public class ScannerFramework {
 
@@ -229,7 +232,185 @@ public class ScannerFramework {
         return args;
     }
 
+    // Surcharge de la méthode pour supporter multipart
+    public static Object[] mapFormParametersToMethodArgs(Method method, HttpServletRequest request,
+                                                         String urlPattern, String actualPath,
+                                                         MultipartParser multipartParser) {
+        Parameter[] parameters = method.getParameters();
+        Object[] args = new Object[parameters.length];
 
+        Map<String, String> pathVars = (urlPattern != null && actualPath != null)
+            ? UrlPatternMatcher.extractVariables(urlPattern, actualPath)
+            : new HashMap<>();
+
+        // Si multipart, utiliser les champs du parser au lieu de request.getParameter
+        Map<String, String> formFields = (multipartParser != null) 
+            ? multipartParser.getFormFields() 
+            : new HashMap<>();
+
+        for (int i = 0; i < parameters.length; i++) {
+            Parameter p = parameters[i];
+            Class<?> paramType = p.getType();
+
+            // NOUVEAU: Support pour FileUpload (fichier unique)
+            if (paramType == FileUpload.class) {
+                if (multipartParser != null) {
+                    String fieldName = getParamName(p);
+                    FileUpload file = multipartParser.getFile(fieldName);
+                    args[i] = file;
+                    System.out.printf("[Param] FileUpload '%s' → %s%n", fieldName, file);
+                } else {
+                    args[i] = null;
+                }
+                continue;
+            }
+
+            // NOUVEAU: Support pour FileUpload[] (fichiers multiples)
+            if (paramType.isArray() && paramType.getComponentType() == FileUpload.class) {
+                if (multipartParser != null) {
+                    String fieldName = getParamName(p);
+                    List<FileUpload> files = multipartParser.getFiles(fieldName);
+                    args[i] = files.toArray(new FileUpload[0]);
+                    System.out.printf("[Param] FileUpload[] '%s' → %d fichiers%n", fieldName, files.size());
+                } else {
+                    args[i] = new FileUpload[0];
+                }
+                continue;
+            }
+
+            // NOUVEAU: Support pour List<FileUpload> (fichiers multiples)
+            if (paramType == List.class && p.getParameterizedType() instanceof ParameterizedType) {
+                ParameterizedType genericType = (ParameterizedType) p.getParameterizedType();
+                if (genericType.getActualTypeArguments().length > 0 
+                    && genericType.getActualTypeArguments()[0] == FileUpload.class) {
+                    if (multipartParser != null) {
+                        String fieldName = getParamName(p);
+                        List<FileUpload> files = multipartParser.getFiles(fieldName);
+                        args[i] = files;
+                        System.out.printf("[Param] List<FileUpload> '%s' → %d fichiers%n", fieldName, files.size());
+                    } else {
+                        args[i] = new java.util.ArrayList<FileUpload>();
+                    }
+                    continue;
+                }
+            }
+
+            // Check if parameter is Map<String, Object>
+            if (paramType == Map.class && p.getParameterizedType() instanceof ParameterizedType) {
+                ParameterizedType paramTypePt = (ParameterizedType) p.getParameterizedType();
+                if (paramTypePt.getActualTypeArguments().length == 2 &&
+                    paramTypePt.getActualTypeArguments()[0] == String.class &&
+                    paramTypePt.getActualTypeArguments()[1] == Object.class) {
+                    // Create Map<String, Object> from request parameters
+                    Map<String, Object> paramMap = new HashMap<>();
+                    
+                    // D'abord les paramètres de la requête classique
+                    for (Map.Entry<String, String[]> entry : request.getParameterMap().entrySet()) {
+                        paramMap.put(entry.getKey(), entry.getValue().length > 0 ? entry.getValue()[0] : null);
+                    }
+                    
+                    // NOUVEAU: Ajouter les champs du multipart
+                    if (multipartParser != null) {
+                        paramMap.putAll(multipartParser.getFormFields());
+                        // Ajouter les fichiers aussi dans la Map
+                        for (Map.Entry<String, FileUpload> entry : multipartParser.getSingleFiles().entrySet()) {
+                            paramMap.put(entry.getKey(), entry.getValue());
+                        }
+                    }
+                    
+                    args[i] = paramMap;
+                    System.out.printf("[Param] Map<String, Object> populated with %d parameters%n", paramMap.size());
+                    continue;
+                }
+            }
+
+            // Check if parameter is a custom object (not primitive, not String, not Map, not FileUpload)
+            if (!paramType.isPrimitive() && paramType != String.class && paramType != Map.class 
+                && paramType != FileUpload.class) {
+                try {
+                    Object obj = paramType.getDeclaredConstructor().newInstance();
+                    for (Field field : paramType.getDeclaredFields()) {
+                        field.setAccessible(true);
+                        String fieldName = field.getName();
+                        
+                        // NOUVEAU: Support pour FileUpload dans les objets personnalisés
+                        if (field.getType() == FileUpload.class && multipartParser != null) {
+                            FileUpload file = multipartParser.getFile(fieldName);
+                            field.set(obj, file);
+                            continue;
+                        }
+                        
+                        // NOUVEAU: Support pour FileUpload[] dans les objets
+                        if (field.getType().isArray() && field.getType().getComponentType() == FileUpload.class 
+                            && multipartParser != null) {
+                            List<FileUpload> files = multipartParser.getFiles(fieldName);
+                            field.set(obj, files.toArray(new FileUpload[0]));
+                            continue;
+                        }
+                        
+                        // Champ texte: d'abord multipart, sinon request.getParameter
+                        String paramValue = (multipartParser != null) 
+                            ? formFields.get(fieldName) 
+                            : request.getParameter(fieldName);
+                        
+                        if (paramValue == null) {
+                            paramValue = request.getParameter(fieldName);
+                        }
+                        
+                        if (paramValue != null) {
+                            Object convertedValue = convertValue(paramValue, field.getType());
+                            field.set(obj, convertedValue);
+                        }
+                    }
+                    args[i] = obj;
+                    System.out.printf("[Param] Custom object %s instantiated and populated%n", paramType.getSimpleName());
+                    continue;
+                } catch (Exception e) {
+                    System.err.println("Erreur lors de l'instanciation de l'objet personnalisé: " + paramType.getSimpleName());
+                    e.printStackTrace();
+                }
+            }
+
+            // CORRECTION: Déclarer la variable value ici
+            String value = null;
+
+            // 1 Si annotation @Param
+            if (p.isAnnotationPresent(Param.class)) {
+                String name = p.getAnnotation(Param.class).value();
+                value = (multipartParser != null) ? formFields.get(name) : request.getParameter(name);
+                if (value == null) value = request.getParameter(name);
+                System.out.printf("[Param] Annotation @Param('%s') → valeur: %s%n", name, value);
+            }
+
+            // 2 Sinon on essaie par nom de paramètre
+            if ((value == null || value.isEmpty()) && p.isNamePresent()) {
+                value = (multipartParser != null) ? formFields.get(p.getName()) : request.getParameter(p.getName());
+                if (value == null) value = request.getParameter(p.getName());
+                System.out.printf("[Param] Nom paramètre '%s' → valeur: %s%n", p.getName(), value);
+            }
+
+            // 3 Sinon on regarde dans les path variables
+            if ((value == null || value.isEmpty()) && pathVars.containsKey(p.getName())) {
+                value = pathVars.get(p.getName());
+                System.out.printf("[Param] Path variable '%s' → valeur: %s%n", p.getName(), value);
+            }
+
+            // 4 Conversion automatique
+            args[i] = convertValue(value, paramType);
+            System.out.printf("[Param] Conversion %s → %s (%s)%n", value, args[i], paramType.getSimpleName());
+        }
+        return args;
+    }
+
+    /**
+     * Utilitaire pour obtenir le nom du paramètre (via @Param ou nom réel)
+     */
+    private static String getParamName(Parameter p) {
+        if (p.isAnnotationPresent(Param.class)) {
+            return p.getAnnotation(Param.class).value();
+        }
+        return p.getName();
+    }
 
     private static Object convertValue(String value, Class<?> type) {
         if (value == null) {
